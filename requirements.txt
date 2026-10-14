@@ -4,7 +4,6 @@ langchain
 langchain-core
 langchain-community
 langchain-google-genai
-langchain-huggingface
 langchain-text-splitters
 langchain-mcp-adapters
 langgraph
@@ -12,8 +11,9 @@ langgraph-checkpoint-sqlite
 aiosqlite
 mcp
 httpx
-sentence-transformers
+fastembed
 faiss-cpu
 pypdf
 duckduckgo-search
+ddgs
 python-dotenv

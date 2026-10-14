@@ -5,6 +5,8 @@ import asyncio
 import json
 import os
 import tempfile
+import threading
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -12,13 +14,23 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 BASE_DIR = Path(__file__).resolve().parent
 INDEX_DIR = BASE_DIR / "vector_indexes"  # one FAISS folder per chat thread
 
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+
+@lru_cache(maxsize=1)
+def get_embeddings():
+    """Local ONNX embeddings (no torch, no API key, no quota). Loaded once on first use."""
+    from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+
+    return FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+
+
+# Warm up in the background so the app starts instantly and the first PDF is still fast.
+threading.Thread(target=get_embeddings, daemon=True).start()
 
 _RETRIEVERS: Dict[str, Any] = {}
 _META: Dict[str, dict] = {}
@@ -53,7 +65,7 @@ def _build_index(file_bytes: bytes, thread_id: str, filename: Optional[str]) -> 
     if not chunks:
         raise ValueError("No readable text found in this PDF (scanned/image PDFs are not supported).")
 
-    store = FAISS.from_documents(chunks, embeddings)
+    store = FAISS.from_documents(chunks, get_embeddings())
     folder = _thread_dir(tid)
     folder.mkdir(parents=True, exist_ok=True)
     store.save_local(str(folder))
@@ -78,7 +90,7 @@ def _load_index(thread_id: str):
     if not (folder / "index.faiss").exists():
         return None
     # Safe: these index files are created by this app, not by users.
-    store = FAISS.load_local(str(folder), embeddings, allow_dangerous_deserialization=True)
+    store = FAISS.load_local(str(folder), get_embeddings(), allow_dangerous_deserialization=True)
     meta_file = folder / "meta.json"
     if meta_file.exists():
         _META[thread_id] = json.loads(meta_file.read_text(encoding="utf-8"))

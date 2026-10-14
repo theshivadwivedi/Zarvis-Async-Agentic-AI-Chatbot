@@ -227,17 +227,18 @@ async def _athread_title(thread_id: str) -> str:
     return "New chat"
 
 
-async def _athreads_with_titles() -> list[tuple[str, str]]:
-    ids = await _alist_threads()
+async def _athreads_with_titles(prefix: str = "") -> list[tuple[str, str]]:
+    ids = [t for t in await _alist_threads() if t.startswith(prefix)]
     titles = await asyncio.gather(*(_athread_title(t) for t in ids), return_exceptions=True)
     return [(t, ti if isinstance(ti, str) else "Untitled chat") for t, ti in zip(ids, titles)]
 
 
-def retrieve_threads_with_titles() -> list[tuple[str, str]]:
-    """[(thread_id, title)] newest first. Title = start of the first user message."""
+def retrieve_threads_with_titles(prefix: str = "") -> list[tuple[str, str]]:
+    """[(thread_id, title)] newest first, only threads whose id starts with `prefix`
+    (the visitor's id), so users never see each other's chats."""
     if checkpointer is None:
         return []
-    return run_async(_athreads_with_titles())
+    return run_async(_athreads_with_titles(prefix))
 
 
 chatbot = run_async(build_graph())

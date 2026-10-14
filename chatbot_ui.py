@@ -1,5 +1,7 @@
 import html
+import os
 import queue
+import re
 import uuid
 
 import streamlit as st
@@ -186,8 +188,12 @@ def set_thread(thread_id: str):
     st.query_params["chat"] = thread_id  # keeps the same chat open after a page refresh
 
 
+def new_thread_id() -> str:
+    return f"{ss.uid}-{uuid.uuid4().hex}"
+
+
 def new_chat():
-    set_thread(str(uuid.uuid4()))
+    set_thread(new_thread_id())
     ss.message_history = []
 
 
@@ -200,26 +206,35 @@ def use_example(prompt: str):
     ss.pending_prompt = prompt
 
 
-def valid_uuid(value) -> bool:
-    try:
-        uuid.UUID(str(value))
-        return True
-    except ValueError:
-        return False
+def valid_thread(value, uid: str) -> bool:
+    return bool(re.fullmatch(rf"{uid}-[0-9a-f]{{32}}", str(value)))
+
+
+# Optional cap on questions per browser session (protects a free API quota).
+# Set MAX_MESSAGES_PER_SESSION in .env / Streamlit secrets; 0 means unlimited.
+MAX_MESSAGES = int(os.getenv("MAX_MESSAGES_PER_SESSION", "0") or 0)
 
 
 # ======================= Session initialization ======================
+if "uid" not in ss:  # anonymous visitor id kept in the URL so a refresh keeps the same history
+    uid = st.query_params.get("u", "")
+    if not re.fullmatch(r"[0-9a-f]{12}", uid):
+        uid = uuid.uuid4().hex[:12]
+    ss.uid = uid
+    st.query_params["u"] = uid
+    ss.msg_count = 0
+
 if "thread_id" not in ss:
-    ss.threads = dict(retrieve_threads_with_titles())  # {thread_id: title}, newest first
+    ss.threads = dict(retrieve_threads_with_titles(f"{ss.uid}-"))  # only this visitor's chats
     saved = st.query_params.get("chat")
-    if saved and valid_uuid(saved):  # page was refreshed: reopen the same chat
+    if saved and valid_thread(saved, ss.uid):  # page was refreshed: reopen the same chat
         ss.thread_id = saved
         try:
             ss.message_history = load_history(saved) if saved in ss.threads else []
         except Exception:
             ss.message_history = []
     else:
-        ss.thread_id = str(uuid.uuid4())
+        ss.thread_id = new_thread_id()
         ss.message_history = []
     st.query_params["chat"] = ss.thread_id
 
@@ -276,7 +291,12 @@ if attachment is not None:
     if attached_name and not user_text:
         st.rerun()  # nothing to answer yet; just show the attached document
 
+if user_text and MAX_MESSAGES and ss.msg_count >= MAX_MESSAGES:
+    st.warning("This demo has reached its message limit for this session. Please try again later.")
+    user_text = ""
+
 if user_text:
+    ss.msg_count += 1
     if ss.thread_id not in ss.threads:
         ss.threads = {ss.thread_id: make_title(user_text), **ss.threads}
     ss.message_history.append(
@@ -357,7 +377,11 @@ if user_text:
             ai_message = st.write_stream(reply_stream())
         except Exception as exc:
             ai_message = ""
-            st.error(f"Something went wrong: {exc}")
+            err = str(exc)
+            if "429" in err or "RESOURCE_EXHAUSTED" in err or "quota" in err.lower():
+                st.error("The free Gemini quota for this demo is used up for now. Please try again later.")
+            else:
+                st.error(f"Something went wrong: {exc}")
 
         if ui["status"] is not None:
             used = ", ".join(dict.fromkeys(TOOL_DONE.get(t, t) for t in ui["tools"]))
