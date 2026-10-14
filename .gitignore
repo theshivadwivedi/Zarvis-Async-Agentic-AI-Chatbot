@@ -1,0 +1,10 @@
+.env
+chatbot.db*
+*.bin
+vector_indexes/
+__pycache__/
+*.pyc
+venv/
+ven/
+.venv/
+.DS_Store

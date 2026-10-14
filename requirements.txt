@@ -1,0 +1,19 @@
+# Python 3.11+
+streamlit>=1.43
+langchain
+langchain-core
+langchain-community
+langchain-google-genai
+langchain-huggingface
+langchain-text-splitters
+langchain-mcp-adapters
+langgraph
+langgraph-checkpoint-sqlite
+aiosqlite
+mcp
+httpx
+sentence-transformers
+faiss-cpu
+pypdf
+duckduckgo-search
+python-dotenv
